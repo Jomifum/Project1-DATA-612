@@ -1,0 +1,200 @@
+---
+title: "Project1 D612"
+author: "Jose Fuentes"
+date: "2025-06-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project 1 DATA 612
+
+Briefly describe the recommender system that you’re going to build out from a business
+perspective, e.g. “This system recommends data science books to readers.”
+• Find a dataset, or build out your own toy dataset. As a minimum requirement for complexity,
+please include numeric ratings for at least five users, across at least five items, with some missing
+data.
+• Load your data into (for example) an R or pandas dataframe, a Python dictionary or list of lists, (or
+another data structure of your choosing). From there, create a user-item matrix.
+• If you choose to work with a large dataset, you’re encouraged to also create a small, relatively
+dense “user-item” matrix as a subset so that you can hand-verify your calculations.
+• Break your ratings into separate training and test datasets.
+• Using your training data, calculate the raw average (mean) rating for every user-item combination.
+• Calculate the RMSE for raw average for both your training data and your test data.
+• Using your training data, calculate the bias for each user and each item.
+• From the raw average, and the appropriate user and item biases, calculate the baseline predictors
+for every user-item combination.
+• Calculate the RMSE for the baseline predictors for both your training data and your test data.
+• Summarize your results.
+
+For this project MovieLens dataset is going to be used and the link is shown as follow, extract a smaller dense matrix from it.
+
+```{r}
+# Loading packages
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+# Downloading and using  MOVIELENS data
+download.file("https://files.grouplens.org/datasets/movielens/ml-100k.zip", 
+              "ml-100k.zip")
+unzip("ml-100k.zip", files = "ml-100k/u.data")
+ratings <- read.table("ml-100k/u.data", 
+                      sep = "\t", 
+                      col.names = c("user", "item", "rating", "timestamp"))
+
+# Select dense 10x10 matrix
+top_users <- ratings %>%
+  count(user) %>%
+  top_n(10, n) %>%
+  pull(user)
+
+top_items <- ratings %>%
+  filter(user %in% top_users) %>%
+  count(item) %>%
+  top_n(10, n) %>%
+  pull(item)
+
+dense_ratings <- ratings %>%
+  filter(user %in% top_users, item %in% top_items) %>%
+  select(user, item, rating)
+
+# train/test split
+set.seed(42)
+dense_ratings <- dense_ratings %>%
+  mutate(split = ifelse(runif(n()) < 0.8, "train", "test"))
+
+train <- dense_ratings %>% filter(split == "train")
+test  <- dense_ratings %>% filter(split == "test")
+
+#Global mean function
+global_mean <- mean(train$rating)
+
+# User and Item biases
+user_bias <- train %>%
+  group_by(user) %>%
+  summarise(user_bias = mean(rating - global_mean))
+
+item_bias <- train %>%
+  group_by(item) %>%
+  summarise(item_bias = mean(rating - global_mean))
+
+# Creating Baseline matrix using training data
+user_ids <- sort(unique(train$user))
+item_ids <- sort(unique(train$item))
+
+bias_grid <- expand.grid(user = user_ids, item = item_ids) %>%
+  left_join(user_bias, by = "user") %>%
+  left_join(item_bias, by = "item") %>%
+  mutate(
+    user_bias = replace_na(user_bias, 0),
+    item_bias = replace_na(item_bias, 0),
+    baseline = global_mean + user_bias + item_bias,
+    user = paste0("User_", user)  # ensuring user names are unique
+  )
+
+baseline_matrix <- bias_grid %>%
+  # Specify that 'user' is the unique identifier, and if duplicates exist, use the first value.
+  pivot_wider(
+    id_cols = user, 
+    names_from = item, 
+    values_from = baseline, 
+    values_fn = first
+  ) %>%
+  column_to_rownames("user") %>%
+  as.matrix()
+
+# === CREATE TEST MATRIX (FROM TEST DATA) ===
+test_matrix <- test %>%
+  mutate(user = paste0("User_", user)) %>%
+  pivot_wider(
+    id_cols = user, 
+    names_from = item, 
+    values_from = rating, 
+    values_fn = mean
+  ) %>%
+  column_to_rownames("user") %>%
+  as.matrix()
+
+#  Aling matrices using common user and items
+common_users <- intersect(rownames(baseline_matrix), rownames(test_matrix))
+common_items <- intersect(colnames(baseline_matrix), colnames(test_matrix))
+
+baseline_aligned <- baseline_matrix[common_users, common_items, drop = FALSE]
+test_aligned     <- test_matrix[common_users, common_items, drop = FALSE]
+
+# === GLOBAL AVERAGE MATRIX FOR REFERENCE ===
+raw_matrix <- matrix(global_mean,
+                     nrow  = nrow(baseline_aligned),
+                     ncol  = ncol(baseline_aligned),
+                     dimnames = dimnames(baseline_aligned))
+
+# RMSE Function
+rmse <- function(x, y) {
+  sqrt(mean((x - y)^2, na.rm = TRUE))
+}
+
+# Calculating RMSE using Aligned matrices
+rmse_test_raw  <- rmse(test_aligned, raw_matrix)
+rmse_test_base <- rmse(test_aligned, baseline_aligned)
+
+# Sumarry table
+summary_rmse <- tibble(
+  Method   = c("Raw Average", "Baseline Predictor"),
+  Test_RMSE = c(round(rmse_test_raw, 3), round(rmse_test_base, 3))
+)
+
+kable(summary_rmse, caption = "Summary of RMSEs (Test Set)") %>%
+  kable_styling(bootstrap_options = c("striped", "bordered", "hover", "condensed")) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "lightblue")
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+# ------------------------------
+# Example: Using Training Data to Compare Predicted and Actual Ratings
+# and to generate recommendations for a chosen user.
+# ------------------------------
+
+# Choose one user from the training set (for example, user ID 13)
+chosen_id <- 13
+chosen_user <- paste0("User_", chosen_id)  # This is how users are named in baseline_matrix
+
+# Extract predicted (baseline) ratings for the chosen user from baseline_matrix
+predicted_ratings <- baseline_matrix[chosen_user, ]
+predicted_df <- tibble(
+  item = as.integer(names(predicted_ratings)),
+  predicted_rating = as.numeric(predicted_ratings)
+)
+
+# Get the actual ratings for the chosen user from the training dataset
+actual_df <- train %>%
+  filter(user == chosen_id) %>%
+  select(item, rating)
+
+# Compare predicted versus actual ratings by joining the data
+comparison <- left_join(predicted_df, actual_df, by = "item")
+cat("Comparison of Predicted Ratings vs. Actual Ratings for", chosen_user, ":\n")
+print(comparison)
+
+# ----- Generating Recommendations -----
+# Identify items the user has not rated in the training dataset.
+# These items are potential recommendations if their predicted
+# rating is high.
+recommendations <- predicted_df %>%
+  anti_join(actual_df, by = "item") %>%
+  arrange(desc(predicted_rating))
+
+cat("\nRecommended Items for", chosen_user, "based on Baseline Predictor (unrated in training):\n")
+print(recommendations)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
