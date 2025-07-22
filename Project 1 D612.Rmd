@@ -158,10 +158,8 @@ kable(summary_rmse, caption = "Summary of RMSEs (Test Set)") %>%
 You can also embed plots, for example:
 
 ```{r}
-# ------------------------------
-# Example: Using Training Data to Compare Predicted and Actual Ratings
-# and to generate recommendations for a chosen user.
-# ------------------------------
+
+# Example: Using Training Data to Compare Predicted and Actual Ratings  and to generate recommendations for a chosen user.
 
 # Choose one user from the training set (for example, user ID 13)
 chosen_id <- 13
@@ -184,10 +182,8 @@ comparison <- left_join(predicted_df, actual_df, by = "item")
 cat("Comparison of Predicted Ratings vs. Actual Ratings for", chosen_user, ":\n")
 print(comparison)
 
-# ----- Generating Recommendations -----
-# Identify items the user has not rated in the training dataset.
-# These items are potential recommendations if their predicted
-# rating is high.
+#  Generating Recommendations 
+# Identify items the user has not rated in the training dataset. These items are potential recommendations if their predicted rating is high.
 recommendations <- predicted_df %>%
   anti_join(actual_df, by = "item") %>%
   arrange(desc(predicted_rating))
@@ -197,4 +193,24 @@ print(recommendations)
 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# What is the baseline recommender you are implementing? What is the core idea?
+The baseline recommender implemented here is a user-item bias model, also known as a baseline predictor. The core idea is to improve over global averaging by accounting for the tendencies of specific users and items to systematically rate higher or lower than the average. The prediction formula is: rui​ =μ+bu+bi, where μ is the global average rating across all users and items, bu is the bias of user u (how much a user tends to rate above or below average), and bi is the bias of item i (how much an item tends to be rated above or below average). This model serves as a strong baseline in recommender systems, especially when data is sparse, and sets a good starting point before using more complex techniques like matrix factorization.
+
+# What do the user and item biases represent?
+User bias (bu) captures the user's general rating behavior. For example, some users always give higher scores (lenient raters), while others consistently give lower scores (harsh critics). Item bias (bi) reflects how an item is generally perceived. Popular or high-quality items tend to have positive bias (rated higher than average), while poorly received ones have negative bias. These biases help isolate systematic effects from random noise and personalize predictions without needing full user-item interactions.
+
+# What may be some considerations to add to improve this recommender? Think regularization for example.
+To improve the recommender, especially in terms of generalization and overfitting prevention, you can add Regularization. This penalizes large bias values to prevent overfitting to the training data. A regularized version modifies the optimization as: minbu bi∑(u,i)∈Train(rui−μ−bu −bi)^2 +λ(bu^2 + bi^2). 
+
+This helps especially when some users or items have few ratings. Other considerations include cold-start handling (default fallback predictions when biases are undefined for new users/items), incorporating additional features (e.g., genre or timestamp effects, implicit feedback like clicks/views, time-aware decay for older ratings), and employing matrix factorization techniques (like ALS/SVD) for more nuanced relationships between users and items.
+
+# What does the RMSE mean, and why is your train RMSE higher than your test?
+RMSE (Root Mean Squared Error) measures the average magnitude of the prediction error, it penalizes large errors more than small ones, making it sensitive to outliers, and a lower RMSE means better prediction accuracy. The observation that train RMSE is higher than test RMSE is unusual, as training error is typically lower. This can happen due to several reasons: the training data might include more sparse or noisy entries, meaning biases learned from limited training interactions may not fully generalize; the test data could be smaller or, by chance, more representative and thus 'easier' to predict; or the train-test split may not have been perfectly stratified. To avoid such sampling artifacts, it is generally a good idea to run multiple random splits and average the RMSE results.
+
+## Conclusions
+
+The prediction results indicate that the recommender system is functionally strong, successfully identifying items a user is likely to enjoy. The highest predicted ratings example 4.52 for item 64, 4.39 for item 50 suggest effective identification of appealing items, with a prediction spread from approximately 2.4 to 4.5 demonstrating good differentiation in item appeal. Furthermore, the system exhibits visible personalization, as predicted ratings largely align with actual ratings for many items example item 22 predicted 4.10 vs. actual 4, item 172 predicted 4.02 vs. actual 5, confirming its ability to capture individual user preferences.
+
+Regarding RMSE performance, the raw average RMSE of 1.089, which uses only the global average for predictions, represents the worst performance. Incorporating user and item biases significantly improves accuracy, yielding a Baseline Predictor RMSE of 1.051, though this remains a basic improvement. While not explicitly detailed in this specific output, it can be inferred that the more advanced ALS model as discussed in prior analyses would likely achieve even better performance, given its capacity for more nuanced personalization.
+
+Despite its strengths, there remains room for improvement. Some mismatches between predicted and actual ratings as item 143 predicted 3.55 vs. actual 1 highlight areas where the model could be refined. Potential enhancements include fine-tuning regularization to prevent overfitting, incorporating more training data or side information such as genres or timestamps to deepen the model's understanding of preferences, and further developing hybrid models that combine collaborative and content-based features. The overall RMSE values in the 1.05–1.08 range are considered decent for datasets with implicit feedback or sparsity, but further tuning could reduce this error. The final verdict is that the recommender system demonstrates solid performance, providing personalized predictions that outperform simple global averages, with clear pathways for future enhancements to improve accuracy and address individual prediction discrepancies.
